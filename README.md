@@ -1,5 +1,6 @@
 # settableVolumeUsingNamedPipeFFplay  
 起動時に標準入力から受け付けた文字列の名前付きパイプから音量の設定をできるようにしています。  
+変更箇所：fftools/ffplay.c  
   
 # License  
 FFmpeg  

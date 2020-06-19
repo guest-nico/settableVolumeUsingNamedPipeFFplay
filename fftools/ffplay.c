@@ -61,6 +61,10 @@
 
 #include <assert.h>
 
+#include <stdio.h>	
+#include <windows.h>
+
+
 const char program_name[] = "ffplay";
 const int program_birth_year = 2003;
 
@@ -369,6 +373,8 @@ static SDL_Window *window;
 static SDL_Renderer *renderer;
 static SDL_RendererInfo renderer_info = {0};
 static SDL_AudioDeviceID audio_dev;
+
+SDL_Thread *stdt = NULL;
 
 static const struct TextureFormatEntry {
     enum AVPixelFormat format;
@@ -3677,11 +3683,60 @@ void show_help_default(const char *opt, const char *arg)
            );
 }
 
+
+static char pipeName[256];	
+static int pipe_thread(void *arg) {	
+	pipeName[strlen(pipeName) - 1] = '\0';	
+	// printf(" ddd %s ", pipeName);	
+	char _n[256];	
+	sprintf(_n, "\\\\.\\pipe\\%s", pipeName);	
+	// printf(" eee %s ", _n);	
+	VideoState *is = arg;	
+	HANDLE hPipe = CreateNamedPipe(_n, //lpName	
+		PIPE_ACCESS_DUPLEX, // dwOpenMode	
+		PIPE_TYPE_BYTE | PIPE_WAIT, // dwPipeMode	
+		5, // nMaxInstances	
+		0, // nOutBufferSize	
+		0, // nInBufferSize	
+		100, // nDefaultTimeOut	
+		NULL); // lpSecurityAttributes	
+	if (hPipe == INVALID_HANDLE_VALUE) {	
+		return 1;	
+	}	
+	// printf("aaaaaaa %s aaaaaa", pipeName);	
+	if (!ConnectNamedPipe(hPipe, NULL)) {	
+		CloseHandle(hPipe);	
+		return 1;	
+	}	
+	while (1) {	
+		char szBuff[256];	
+		DWORD dwBytesRead;	
+		if (!ReadFile(hPipe, szBuff, sizeof(szBuff), &dwBytesRead, NULL)) {	
+			break;	
+		}	
+		szBuff[dwBytesRead] = '\0';	
+		// printf("PipeServer: %s", szBuff);	
+		int v = atoi(szBuff);	
+		if (v == -10) is->muted = !is->muted;	
+		else if (v >= 0 && v <= 128)	
+		is->audio_volume = v;	
+		//break;	
+	}
+	FlushFileBuffers(hPipe);	
+	DisconnectNamedPipe(hPipe);	
+	CloseHandle(hPipe);	
+	return 1;	
+}
+
+
 /* Called from the main */
 int main(int argc, char **argv)
 {
     int flags;
     VideoState *is;
+
+	//pipe name	
+	fgets(pipeName, 256, stdin);
 
     init_dynload();
 
@@ -3774,9 +3829,14 @@ int main(int argc, char **argv)
         do_exit(NULL);
     }
 
+	stdt = SDL_CreateThread(pipe_thread, "pipe_thread", is);	
+	
     event_loop(is);
 
     /* never returns */
 
     return 0;
 }
+
+
+
